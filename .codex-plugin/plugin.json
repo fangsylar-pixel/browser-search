@@ -1,0 +1,29 @@
+{
+  "name": "browser-search-mcp",
+  "version": "0.1.0",
+  "description": "Search the web using a real browser - enables any LLM to search Google, Bing, Baidu.",
+  "author": {
+    "name": "fangsylar-pixel",
+    "url": "https://github.com/fangsylar-pixel"
+  },
+  "homepage": "https://github.com/fangsylar-pixel/browser-search-mcp",
+  "repository": "https://github.com/fangsylar-pixel/browser-search-mcp",
+  "license": "MIT",
+  "keywords": ["search", "browser", "mcp", "web-search", "ollama"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Browser Search MCP",
+    "shortDescription": "Real browser web search for any LLM",
+    "longDescription": "Search the web using a real browser. Supports Google, Bing, Baidu, DuckDuckGo. Built on browser-takeover-bridge architecture.",
+    "developerName": "fangsylar-pixel",
+    "category": "Productivity",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/fangsylar-pixel/browser-search-mcp",
+    "brandColor": "#10B981",
+    "defaultPrompt": [
+      "Search the web for latest information.",
+      "Search Google/Bing/Baidu for anything."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}
