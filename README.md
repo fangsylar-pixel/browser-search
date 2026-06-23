@@ -116,3 +116,12 @@ browser-search-mcp/
 ## License
 
 MIT
+
+
+## Support
+
+If this project helps you, optional support is welcome:
+
+[Support on Afdian](https://afdian.com/a/fangsylar)
+
+Bug reports and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) and [SUPPORT.md](SUPPORT.md).
