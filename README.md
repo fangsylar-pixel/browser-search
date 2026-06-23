@@ -118,6 +118,20 @@ browser-search-mcp/
 MIT
 
 
+
+## Architecture
+
+```mermaid
+flowchart LR
+    LLM[LLM / Agent]
+    MCP[MCP Client]
+    BSM[browser-search-mcp]
+    CDP[Chrome/Edge CDP]
+    SE[Search Engine]
+    BSM --> CDP --> SE
+    SE --> BSM --> MCP --> LLM
+    style BSM fill:#10b981,color:#fff
+```
 ## Support
 
 If this project helps you, optional support is welcome:
