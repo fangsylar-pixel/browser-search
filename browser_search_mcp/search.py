@@ -368,6 +368,8 @@ async def web_search(
     query: str,
     engine: str = "google",
     max_results: int = 10,
+    page: int = 1,
+    time_range: str or None = None,
     deep_mode: bool = False,
 ) -> SearchResults:
     """
@@ -389,6 +391,16 @@ async def web_search(
 
         cfg = SEARCH_ENGINES[current]
         url = cfg["url"].format(query=urllib.parse.quote_plus(query))
+        if page > 1:
+            pp = {"google": "&start=" + str((page-1)*10), "bing": "&first=" + str((page-1)*10+1), "duckduckgo": "&s=" + str((page-1)*10)}
+            if current in pp:
+                url += pp[current]
+        if time_range:
+            tp = {"google": {"hour":"&tbs=qdr:h","day":"&tbs=qdr:d","week":"&tbs=qdr:w","month":"&tbs=qdr:m","year":"&tbs=qdr:y"},
+                  "bing": {"hour":"&qft=filterui:age-lasthour","day":"&qft=filterui:age-lastday","week":"&qft=filterui:age-lastweek","month":"&qft=filterui:age-lastmonth","year":"&qft=filterui:age-lastyear"}}
+            t = tp.get(current, {}).get(time_range) if time_range else None
+            if t:
+                url += t
 
         if not session.available:
             session.ensure_browser(headless=True)

@@ -103,6 +103,9 @@ def web_search(
    engine: str = "google",
    max_results: int = 10,
    headless: bool = True,
+   page: int = 1,
+   time_range: str = "",
+   deep_mode: bool = False,
 ) -> str:
    """Search the web using a real browser and return structured results.
     
@@ -186,6 +189,10 @@ def web_search_multi(
    engines: str = "google,bing,duckduckgo",
    max_results_per_engine: int = 5,
    headless: bool = True,
+   page: int = 1,
+   time_range: str = "",
+   deep_mode: bool = False,
+   deduplicate: bool = False,
 ) -> str:
    """Search multiple search engines and combine results.
     
@@ -206,7 +213,7 @@ def web_search_multi(
     
    for engine in engine_list:
        combined[engine] = json.loads(
-           web_search(query, engine, max_results_per_engine, headless, deep_mode)
+           web_search(query, engine, max_results_per_engine, headless, page, time_range, deep_mode)
        )
     
    return json.dumps(combined, ensure_ascii=False, indent=2)
