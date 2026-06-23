@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "browser-search": {
+      "command": "browser-search-mcp",
+      "args": [],
+      "startup_timeout_sec": 60
+    }
+  }
+}
