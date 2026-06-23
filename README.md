@@ -58,6 +58,8 @@ Then configure in any MCP client:
 
 Config file: `~/.browser-search-mcp/config.json`
 
+### Browser Mode (default)
+
 ```json
 {
   "browser": {
@@ -68,15 +70,32 @@ Config file: `~/.browser-search-mcp/config.json`
   "cache": {
     "enabled": true,
     "ttl": 300
-  },
-  "server": {
-    "default_engine": "google",
-    "log_level": "INFO"
   }
 }
 ```
 
-Environment variables also work: `BROWSER_SEARCH_HEADLESS=true`, `BROWSER_SEARCH_DEFAULT_ENGINE=bing`, etc.
+### API Mode (faster, needs API key)
+
+```json
+{
+  "provider": {
+    "name": "tavily",
+    "tavily_api_key": "tvly-your-key-here"
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `BROWSER_SEARCH_HEADLESS` | `true` | Run browser headless |
+| `BROWSER_SEARCH_PROVIDER` | `tavily` | Choose provider: browser/tavily/brave |
+| `BROWSER_SEARCH_TAVILY_KEY` | `tvly-xxx` | Tavily API key |
+| `BROWSER_SEARCH_BRAVE_KEY` | `...` | Brave Search API key |
+| `BROWSER_SEARCH_CACHE_TTL` | `300` | Cache TTL in seconds |
+| `BROWSER_SEARCH_DEFAULT_ENGINE` | `bing` | Default search engine |
+| `BROWSER_SEARCH_BROWSER` | `edge` | Browser executable name |
 
 ## How It Works
 
