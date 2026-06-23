@@ -188,6 +188,21 @@ def web_search(
    session = get_session()
    
    # Check cache first
+   if _SEARCH_CACHE:
+       cached = _SEARCH_CACHE.get(query, engine)
+       if cached is not None:
+           return cached
+   
+   # Ensure browser is ready
+   try:
+       info = session.detect()
+       if not session.available:
+           result = session.ensure_browser(headless=headless)
+           if result.get("source") == "failed":
+               return json.dumps({"error": result.get("error", "No browser available")})
+   except Exception as exc:
+       return json.dumps({"error": f"Browser detection failed: {exc}"})
+    
    # Build search URL
    if engine not in SEARCH_ENGINES:
        return json.dumps({

@@ -24,7 +24,7 @@ from typing import Any
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-def _http_json(url: str, method: str = "GET", body: Any = None, timeout: float = 3) -> Any:
+def http_json(url: str, method: str = "GET", body: Any = None, timeout: float = 3) -> Any:
    """Fetch a JSON response from a local HTTP endpoint."""
    req = urllib.request.Request(url, method=method)
    if body is not None:
@@ -115,8 +115,8 @@ def discover_ports(host: str = "127.0.0.1", ports: list[int] | None = None) -> l
            continue
        # Port is open, try CDP
        try:
-           version = _http_json(f"http://{host}:{port}/json/version", timeout=1.5)
-           pages = _http_json(f"http://{host}:{port}/json/list", timeout=1.5)
+           version = http_json(f"http://{host}:{port}/json/version", timeout=1.5)
+           pages = http_json(f"http://{host}:{port}/json/list", timeout=1.5)
            if version:
                reachable.append({
                    "host": host,
