@@ -16,6 +16,44 @@ from . import bridge as bridge_mod
 from . import cdp as cdp_mod
 from .parsers import PARSERS, SearchResults
 
+# Anti-bot helpers
+import random as _random_ab
+import time as _time_ab
+_CAPTCHA_KW = [
+    "captcha","verify","unusual traffic","robot","automated queries",
+    chr(39564)+chr(35797)+chr(30721), chr(23433)+chr(20840)+chr(39564),
+    chr(26837)+chr(22120)+chr(36755)+chr(39564),
+]
+_last_ts = {}
+
+def _has_captcha(t):
+    if not t: return False
+    t = t.lower()
+    for kw in _CAPTCHA_KW:
+        if kw in t: return True
+    return False
+
+def _delay(engine):
+    now = _time_ab.time()
+    last = _last_ts.get(engine, 0)
+    if now - last < 0.5:
+        _time_ab.sleep(_random_ab.uniform(0.1, 0.5))
+    _time_ab.sleep(_random_ab.uniform(0.1, 0.3))
+    _last_ts[engine] = _time_ab.time()
+
+FALLBACK = {
+    "google": ["bing","duckduckgo","baidu"],
+    "bing": ["duckduckgo","google","baidu"],
+    "baidu": ["bing","duckduckgo"],
+    "duckduckgo": ["bing","google"],
+}
+
+def _next_fallback(engine, tried):
+    for fb in FALLBACK.get(engine, []):
+        if fb not in tried: return fb
+    return None
+
+
 
 # ── Search engine config ─────────────────────────────────────────────
 
@@ -245,81 +283,102 @@ EXTRACTORS: dict[str, str] = {
 
 
 async def web_search(
-   session: SearchSession,
-   query: str,
-   engine: str = "google",
-   max_results: int = 10,
+    session: SearchSession,
+    query: str,
+    engine: str = "google",
+    max_results: int = 10,
+    deep_mode: bool = False,
 ) -> SearchResults:
-   """Perform a web search and return structured results.
+    """
+    Perform a web search with anti-bot detection and engine fallback.
     
-   Uses the browser session to navigate to the search engine,
-   extracts results via JavaScript DOM parsing, and returns
-   them as a list of {title, url, snippet} dicts.
-   """
-   if engine not in SEARCH_ENGINES:
-       raise ValueError(f"Unsupported search engine: {engine}. "
-                        f"Supported: {', '.join(SEARCH_ENGINES.keys())}")
+    Tries primary engine first, detects CAPTCHA, falls back automatically.
+    deep_mode: also reads full content from top 2 results.
+    """
+    tried = set()
+    current = engine
 
-   engine_config = SEARCH_ENGINES[engine]
-   search_url = engine_config["url"].format(query=urllib.parse.quote_plus(query))
+    while current and current not in tried:
+        tried.add(current)
+        _delay(current)
 
-   if not session.available:
-       session.ensure_browser(headless=True)
+        if current not in SEARCH_ENGINES:
+            current = _next_fallback(engine, tried)
+            continue
 
-   if not session.available:
-       raise RuntimeError("Cannot perform search: no browser available. "
-                         "Ensure Chrome/Edge is running with --remote-debugging-port, "
-                         "or run 'browser-search-mcp launch' first.")
+        cfg = SEARCH_ENGINES[current]
+        url = cfg["url"].format(query=urllib.parse.quote_plus(query))
 
-   # Navigate to search engine and get the page ID
-   nav_result = session.navigate(search_url)
-   page_id = nav_result.get("page", {}).get("id") if nav_result else None
+        if not session.available:
+            session.ensure_browser(headless=True)
+        if not session.available:
+            raise RuntimeError("No browser available")
 
-   # Wait for page to be ready
-   time.sleep(1.0)
-   for _ in range(15):
-       try:
-           ready = session.evaluate("document.readyState", page_id=page_id)
-           state = (ready.get("result") or {}).get("result", {}).get("value", "")
-           if state == "complete":
-               break
-       except Exception:
-           pass
-       time.sleep(0.3)
+        try:
+            nav = session.navigate(url)
+            pid = nav.get("page", {}).get("id") if nav else None
 
-   # Extra wait for dynamic content (search results load after DOM ready)
-   time.sleep(1.5)
+            _time_ab.sleep(1.0)
+            for _ in range(15):
+                try:
+                    r = session.evaluate("document.readyState", page_id=pid)
+                    s = (r.get("result") or {}).get("result", {}).get("value", "")
+                    if s == "complete": break
+                except: pass
+                _time_ab.sleep(0.3)
+            _time_ab.sleep(1.0)
 
-   # Try JavaScript extraction first
-   extractor = EXTRACTORS.get(engine)
-   result_list: list = []
-   if extractor:
-       for attempt in range(3):
-           try:
-               result = session.evaluate(extractor, page_id=page_id)
-               raw = result.get("result", {}).get("result", {}).get("value", "[]")
-               if raw and raw != "[]":
-                   parsed = __import__("json").loads(raw)
-                   if parsed:
-                       result_list = parsed
-                       break
-           except Exception as e:
-               if attempt < 2:
-                   time.sleep(1.0)
-    
-   # Fallback: text-based parsing
-   if not result_list:
-       try:
-           text = session.get_page_text(page_id=page_id)
-           parser = PARSERS.get(engine)
-           if parser:
-               result_list = parser(text)
-       except Exception:
-           pass
+            # CAPTCHA detection
+            try:
+                txt = session.get_page_text(page_id=pid)
+                if _has_captcha(txt):
+                    current = _next_fallback(engine, tried)
+                    continue
+            except: pass
 
-   return result_list[:max_results]
+            # JS extraction
+            ext = EXTRACTORS.get(current)
+            rl = []
+            if ext:
+                for _ in range(3):
+                    try:
+                        res = session.evaluate(ext, page_id=pid)
+                        raw = res.get("result",{}).get("result",{}).get("value","[]")
+                        if raw and raw != "[]":
+                            import json as _j
+                            rl = _j.loads(raw)
+                            if rl: break
+                    except:
+                        if _ < 2: _time_ab.sleep(1.0)
 
+            # Text fallback
+            if not rl:
+                try:
+                    txt = session.get_page_text(page_id=pid)
+                    parser = PARSERS.get(current)
+                    if parser: rl = parser(txt)
+                except: pass
 
+            if rl:
+                # Deep mode: auto-read top 2 results
+                if deep_mode:
+                    for item in rl[:2]:
+                        u = item.get("url", "")
+                        if u:
+                            try:
+                                session.navigate(u)
+                                _time_ab.sleep(2.0)
+                                ft = session.get_page_text()
+                                item["full_content"] = (ft or "")[:2000]
+                            except:
+                                item["full_content"] = ""
+                return rl[:max_results]
+            else:
+                current = _next_fallback(engine, tried)
+        except Exception:
+            current = _next_fallback(engine, tried)
+
+    return []
 async def web_search_multi(
    session: SearchSession,
    query: str,
