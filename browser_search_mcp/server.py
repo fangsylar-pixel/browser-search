@@ -18,6 +18,7 @@ from fastmcp import FastMCP
 
 from . import bridge as bridge_mod
 from . import cdp as cdp_mod
+from .config import AppConfig
 from .search import EXTRACTORS, SEARCH_ENGINES, PARSERS, SearchSession, SearchResults, _deduplicate_results, get_engine_health
 from .providers import get_provider as _get_api_provider
 import urllib.parse
@@ -33,14 +34,31 @@ log = logging.getLogger("browser-search-mcp")
 
 
 def _get_provider():
-    cfg = get_config()
+    cfg = AppConfig.load()
     if cfg.provider.name == "browser":
-        return None
-    try:
-        return _get_api_provider(config=cfg)
-    except Exception as e:
-        log.warning("Provider init failed, falling back to browser: %s", e)
-        return None
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as _TimeoutError
+            with ThreadPoolExecutor(max_workers=1) as _exec:
+                _fut = _exec.submit(bridge_provider_mod.create_bridge_search_provider)
+                from . import bridge_provider as _bp
+                _fut = _exec.submit(_bp.create_bridge_search_provider)
+                bridge_prov = _fut.result(timeout=4)
+            if bridge_prov is not None:
+                log.info("Using browser-takeover extension bridge for search")
+                return bridge_prov
+        except _TimeoutError:
+            log.debug("Bridge provider connection timed out (4s)")
+        except Exception as e:
+            log.debug("Bridge provider not available: %s", e)
+    if cfg.provider.name in ("tavily", "brave"):
+        try:
+            api_prov = _get_api_provider(config=cfg)
+            if api_prov is not None:
+                log.info("Using API provider: %s", cfg.provider.name)
+                return api_prov
+        except Exception as e:
+            log.warning("API provider init failed: %s", e)
+    return None
 
 
 # ── Result Cache ────────────────────────────────────────────────────
@@ -107,7 +125,19 @@ def get_session() -> SearchSession:
    return _session
 
 
-# ── MCP Tools ────────────────────────────────────────────────────────
+# ──   Provider instance (lazy, may be bridge/API/CDP) 
+
+_provider_instance = None
+
+
+def get_provider_instance():
+    global _provider_instance
+    if _provider_instance is None:
+        _provider_instance = _get_provider()
+    return _provider_instance
+
+
+# MCP Tools ────────────────────────────────────────────────────────
 
 @mcp.tool()
 def web_search(
@@ -125,6 +155,10 @@ def web_search(
    to navigate to the search engine, extract results from the DOM,
    and return them as structured JSON.
     
+   When the browser-takeover extension bridge is available, searches
+   use the extension's authenticated browser session instead of a
+   headless browser -- giving access to logged-in content.
+    
    Args:
        query: The search query string
        engine: Search engine: google, bing, baidu, or duckduckgo
@@ -134,24 +168,26 @@ def web_search(
    Returns:
        JSON array of {title, url, snippet} objects
    """
+   # Try bridge / API provider first
+   provider = get_provider_instance()
+   if provider is not None:
+       try:
+           results = provider.search(
+               query=query,
+               engine=engine,
+               max_results=max_results,
+           )
+           result_str = json.dumps(results[:max_results], ensure_ascii=False, indent=2)
+           if _SEARCH_CACHE:
+               _SEARCH_CACHE.set(query, engine, result_str)
+           return result_str
+       except Exception as exc:
+           log.warning("Provider search failed, falling back to CDP: %s", exc)
+
+   # CDP browser path
    session = get_session()
    
    # Check cache first
-   if _SEARCH_CACHE:
-       cached = _SEARCH_CACHE.get(query, engine)
-       if cached is not None:
-           return cached
-   
-   # Ensure browser is ready
-   try:
-       info = session.detect()
-       if not session.available:
-           result = session.ensure_browser(headless=headless)
-           if result.get("source") == "failed":
-               return json.dumps({"error": result.get("error", "No browser available")})
-   except Exception as exc:
-       return json.dumps({"error": f"Browser detection failed: {exc}"})
-    
    # Build search URL
    if engine not in SEARCH_ENGINES:
        return json.dumps({
@@ -228,6 +264,15 @@ def web_search_multi(
            web_search(query, engine, max_results_per_engine, headless, page, time_range, deep_mode)
        )
     
+   # Optional dedup across engines
+   if deduplicate:
+       all_results = []
+       for eng_results in combined.values():
+           if isinstance(eng_results, list):
+               all_results.extend(eng_results)
+       deduped = _deduplicate_results(all_results)
+       combined["_combined"] = deduped
+    
    return json.dumps(combined, ensure_ascii=False, indent=2)
 
 
@@ -264,10 +309,11 @@ def web_search_read_page(
 
 @mcp.tool()
 def web_search_status() -> str:
-   """Check the current browser and bridge status.
+   """Check the current browser, bridge, and provider status.
     
-   Detects available CDP browser instances and checks if the
-   browser-takeover extension bridge is running.
+   Detects available CDP browser instances, checks if the
+   browser-takeover extension bridge is running, and reports
+   the active provider type.
     
    Returns:
        JSON status information
@@ -276,15 +322,32 @@ def web_search_status() -> str:
    try:
        info = session.detect()
         
-       # Also check for browser-takeover bridge specifically
+       # Bridge check
        bridge = bridge_mod.bridge_status()
+       from . import bridge_provider as _bp
+       bridge_prov = _bp.create_bridge_search_provider()
+       bridge_search_available = bridge_prov is not None
+       
+       # Provider info
+       provider = get_provider_instance()
+       provider_type = type(provider).__name__ if provider else "cdp_browser"
+       
+       # Engine health
+       engine_health = get_engine_health()
         
        return json.dumps({
            "cdp": info.get("cdp"),
            "bridge": {
                "available": bridge is not None,
+               "search_available": bridge_search_available,
                "status": bridge,
            },
+           "provider": {
+               "type": provider_type,
+               "active": provider is not None,
+           },
+           "cache": _SEARCH_CACHE.stats,
+           "engine_health": engine_health,
            "session_ready": session.available,
        }, ensure_ascii=False, indent=2)
    except Exception as exc:

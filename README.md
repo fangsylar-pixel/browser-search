@@ -31,6 +31,34 @@ Then configure in any MCP client:
 }
 ```
 
+
+## Bridge Integration (browser-takeover extension)
+
+When installed alongside the [browser-takeover-bridge](https://github.com/fangsylar-pixel/browser-takeover-bridge) extension, browser-search-mcp automatically detects the extension and routes searches through it instead of launching a headless CDP browser.
+
+**Why use the bridge?**
+
+* **Authenticated sessions** - search while logged into services (e.g., intranet, social media, internal tools)
+* **Faster startup** - no need to launch a new browser; reuses the extension's existing connection
+* **Lower resource usage** - share one browser session instead of spawning a separate headless instance
+
+**How it works:**
+
+`
+LLM/Agent -> MCP Client -> browser-search-mcp -> bridge (extension) -> user's browser -> search engine
+`
+
+The bridge check runs automatically at startup. If the extension is not detected, the server falls back to the standard CDP path (launching its own browser). No configuration needed.
+
+**Detection:** Run web_search_status to see if the bridge is active:
+`json
+{
+  "bridge": {
+    "available": true,
+    "search_available": true
+  }
+}
+`
 ## Features
 
 | Feature | Status | Description |
@@ -40,7 +68,17 @@ Then configure in any MCP client:
 | Result caching | Yes | LRU with configurable TTL |
 | Config file | Yes | JSON + env vars |
 | Auto-reconnect | Yes | Transparent reconnection |
-| browser-takeover bridge | Yes | Detects extension bridge |
+| browser-takeover bridge | Yes | Auto-detected extension bridge |
+| CAPTCHA detection | Yes | Auto fallback on CAPTCHA |
+| Engine fallback | Yes | Automatic on failure/CAPTCHA |
+| Deep mode | Yes | Auto-extracts top 2 result content |
+| Pagination | Yes | Multi-page search support |
+| Time filters | Yes | hour/day/week/month/year |
+| Engine health check | Yes | Tracks per-engine availability |
+| Cross-engine dedup | Yes | Deduplicate multi-engine results |
+| API providers (Tavily/Brave) | Yes | Faster, API-key based |
+| HTTP API | Yes | FastAPI + OpenAI compatible |
+| Codex plugin | Yes | Auto-install as Codex plugin |
 | Fallback parsers | Yes | Text-based when JS fails |
 | Retry on failure | Yes | Exponential backoff |
 
@@ -121,9 +159,15 @@ browser-search-mcp/
     bridge.py    Browser-takeover extension bridge client
     search.py    Search orchestration with caching and retry
     parsers.py   Text-based search result parsers (fallback)
+    bridge_provider.py  Bridge-based search provider (optional, auto-detected)
+    providers.py API search providers (Tavily, Brave)
     server.py    FastMCP server with 5 search tools
+    http_api.py  HTTP API server (FastAPI + OpenAI-compatible endpoint)
+    setup_assistant.py  Prerequisites check
+  .codex-plugin/ Codex plugin packaging
   .github/      CI and issue templates
-  README.md, CONTRIBUTING.md, LICENSE
+  website/      Promotional website (GitHub Pages)
+  README.md, CONTRIBUTING.md, LICENSE, SUPPORT.md
 ```
 
 ## Requirements

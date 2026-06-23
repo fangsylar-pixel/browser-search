@@ -24,7 +24,7 @@ from typing import Any
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-def http_json(url: str, method: str = "GET", body: Any = None, timeout: float = 3) -> Any:
+def _http_json(url: str, method: str = "GET", body: Any = None, timeout: float = 3) -> Any:
    """Fetch a JSON response from a local HTTP endpoint."""
    req = urllib.request.Request(url, method=method)
    if body is not None:
@@ -96,12 +96,27 @@ def choose_page(host: str, port: int, page_id: str | None = None) -> dict | None
 
 
 def discover_ports(host: str = "127.0.0.1", ports: list[int] | None = None) -> list[dict]:
-   """Scan common CDP ports and return reachable browser info."""
+   """Scan common CDP ports and return reachable browser info.
+   
+   Uses fast socket connect first, then HTTP for responsive ports only.
+   """
    reachable = []
    for port in ports or DEFAULT_PORTS:
+       # Fast socket check first
        try:
-           version = cdp_version(host, port)
-           pages = cdp_pages(host, port)
+           import socket as _sk
+           _s = _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM)
+           _s.settimeout(0.5)
+           if _s.connect_ex((host, port)) != 0:
+               _s.close()
+               continue
+           _s.close()
+       except:
+           continue
+       # Port is open, try CDP
+       try:
+           version = _http_json(f"http://{host}:{port}/json/version", timeout=1.5)
+           pages = _http_json(f"http://{host}:{port}/json/list", timeout=1.5)
            if version:
                reachable.append({
                    "host": host,
