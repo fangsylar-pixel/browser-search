@@ -263,32 +263,53 @@ async def web_search(
                           "Ensure Chrome/Edge is running with --remote-debugging-port, "
                           "or run 'browser-search-mcp launch' first.")
 
-    # Navigate to search engine
-    session.navigate(search_url)
+    # Navigate to search engine and get the page ID
+    nav_result = session.navigate(search_url)
+    page_id = nav_result.get("page", {}).get("id") if nav_result else None
 
-    # Wait for results to load
-    time.sleep(2.0)
+    # Wait for page to be ready
+    time.sleep(1.0)
+    for _ in range(15):
+        try:
+            ready = session.evaluate("document.readyState", page_id=page_id)
+            state = (ready.get("result") or {}).get("result", {}).get("value", "")
+            if state == "complete":
+                break
+        except Exception:
+            pass
+        time.sleep(0.3)
+
+    # Extra wait for dynamic content (search results load after DOM ready)
+    time.sleep(1.5)
 
     # Try JavaScript extraction first
     extractor = EXTRACTORS.get(engine)
+    result_list: list = []
     if extractor:
+        for attempt in range(3):
+            try:
+                result = session.evaluate(extractor, page_id=page_id)
+                raw = result.get("result", {}).get("result", {}).get("value", "[]")
+                if raw and raw != "[]":
+                    parsed = __import__("json").loads(raw)
+                    if parsed:
+                        result_list = parsed
+                        break
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(1.0)
+    
+    # Fallback: text-based parsing
+    if not result_list:
         try:
-            result = session.evaluate(extractor)
-            raw = result.get("result", {}).get("result", {}).get("value", "[]")
-            if raw and raw != "[]":
-                parsed = __import__("json").loads(raw)
-                if parsed:
-                    return parsed[:max_results]
+            text = session.get_page_text(page_id=page_id)
+            parser = PARSERS.get(engine)
+            if parser:
+                result_list = parser(text)
         except Exception:
             pass
 
-    # Fallback: text-based parsing
-    text = session.get_page_text()
-    parser = PARSERS.get(engine)
-    if parser:
-        return parser(text)[:max_results]
-
-    return []
+    return result_list[:max_results]
 
 
 async def web_search_multi(

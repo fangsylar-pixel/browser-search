@@ -170,90 +170,98 @@ def launch_browser(
 # ── WebSocket CDP Communication ──────────────────────────────────────
 
 class CdpWebSocket:
-    """Minimal WebSocket client for Chrome DevTools Protocol."""
+    """WebSocket client for CDP using the websockets library."""
 
     def __init__(self, ws_url: str):
-        parsed = urllib.parse.urlparse(ws_url)
-        host = parsed.hostname or "127.0.0.1"
-        port = parsed.port or 9222
-        path = parsed.path or "/"
-        key = base64.b64encode(os.urandom(16)).decode("ascii")
-        sock = socket.create_connection((host, port), timeout=10)
-        sock.sendall(
-            (
-                f"GET {path} HTTP/1.1\r\n"
-                f"Host: {host}:{port}\r\n"
-                "Upgrade: websocket\r\n"
-                "Connection: Upgrade\r\n"
-                f"Sec-WebSocket-Key: {key}\r\n"
-                "Sec-WebSocket-Version: 13\r\n\r\n"
-            ).encode("ascii")
-        )
-        resp = sock.recv(4096)
-        lines = resp.split(b"\r\n")
-        if b" 101 " not in lines[0]:
-            sock.close()
-            raise RuntimeError(f"WebSocket handshake failed: {lines[0].decode()}")
-        accept_line = next((l for l in lines if l.startswith(b"Sec-WebSocket-Accept:")), None)
-        if accept_line:
-            expected = base64.b64encode(
-                hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")).digest()
-            )
-            if expected not in accept_line:
-                sock.close()
-                raise RuntimeError("WebSocket accept header mismatch")
-        self._sock = sock
-        self._buf = b""
+        import asyncio
+        self._ws_url = ws_url
         self._lock = threading.Lock()
+        self._loop = asyncio.new_event_loop()
+        self._ws = self._loop.run_until_complete(self._connect())
 
-    def _read_frame(self) -> bytes:
-        while True:
-            first = self._sock.recv(1)
-            if not first:
-                raise RuntimeError("WebSocket closed")
-            opcode = first[0] & 0x0F
-            if opcode == 8:
-                raise RuntimeError("WebSocket closed by browser")
-            if opcode == 9:
-                self._sock.sendall(b"\x8a\x00")
-                continue
-            if opcode not in (1, 2):
-                continue
-            second = self._sock.recv(1)
-            masked = (second[0] & 0x80) != 0
-            length = second[0] & 0x7F
-            if length == 126:
-                length = int.from_bytes(self._sock.recv(2), "big")
-            elif length == 127:
-                length = int.from_bytes(self._sock.recv(8), "big")
-            if masked:
-                mask = self._sock.recv(4)
-                data = self._sock.recv(length)
-                return bytes(b ^ mask[i % 4] for i, b in enumerate(data))
-            return self._sock.recv(length)
+    async def _connect(self):
+        import websockets
+        return await websockets.connect(self._ws_url, max_size=2**20, close_timeout=10)
 
-    def call(self, method: str, params: dict | None = None) -> Any:
-        """Send a CDP command and wait for the result."""
+    def _run(self, coro):
+        return self._loop.run_until_complete(coro)
+
+    def call(self, method: str, params=None):
+        import asyncio, json, websockets
         cmd_id = id(method)
         payload = json.dumps({"id": cmd_id, "method": method, "params": params or {}})
         with self._lock:
-            frame = bytearray()
-            frame.append(0x81)
-            data = payload.encode("utf-8")
-            if len(data) < 126:
-                frame.append(len(data))
-            elif len(data) < 65536:
-                frame.append(126)
-                frame.extend(len(data).to_bytes(2, "big"))
-            else:
-                frame.append(127)
-                frame.extend(len(data).to_bytes(8, "big"))
-            frame.extend(data)
-            self._sock.sendall(bytes(frame))
+            try:
+                self._run(self._ws.send(payload))
+                while True:
+                    msg = self._run(asyncio.wait_for(self._ws.recv(), timeout=30))
+                    try:
+                        obj = json.loads(msg)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+                    if obj.get("id") == cmd_id:
+                        if "error" in obj:
+                            raise RuntimeError(obj["error"].get("message", str(obj["error"])))
+                        return obj.get("result")
+            except asyncio.TimeoutError:
+                raise RuntimeError("timed out")
+            except websockets.ConnectionClosed as e:
+                raise RuntimeError("WebSocket closed: " + str(e))
+
+    def close(self):
+        try:
+            if self._ws:
+                self._run(self._ws.close())
+            self._loop.close()
+        except Exception:
+            pass
+
+def cdp_call(
+    host: str, port: int, method: str, params: dict | None = None, page_id: str | None = None
+) -> dict:
+    """Execute a CDP method on the first/selected page using websockets."""
+    import asyncio, json, websockets
+    page = choose_page(host, port, page_id)
+    if not page:
+        raise RuntimeError(f"No CDP-accessible page found on {host}:{port}")
+    ws_url = page["webSocketDebuggerUrl"]
+    result_data = _cdp_call_via_ws(ws_url, method, params or {})
+    return {
+        "page": {"id": page.get("id"), "title": page.get("title"), "url": page.get("url")},
+        "result": result_data,
+    }
+
+
+_CDP_CMD_COUNTER = [1000]  # mutable list for counter
+
+
+def _cdp_call_via_ws(ws_url: str, method: str, params: dict) -> dict:
+    """Single CDP call via fresh websocket, isolated in its own thread."""
+    import asyncio, json, websockets, threading
+
+    _result = None
+    _error = None
+
+    def _run_in_thread():
+        nonlocal _result, _error
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+        try:
+            _result = _loop.run_until_complete(_do_call())
+        except Exception as e:
+            _error = e
+        finally:
+            _loop.close()
+
+    async def _do_call():
+        async with websockets.connect(ws_url, max_size=2**20, close_timeout=5) as ws:
+            _CDP_CMD_COUNTER[0] += 1
+            cmd_id = _CDP_CMD_COUNTER[0]
+            await ws.send(json.dumps({"id": cmd_id, "method": method, "params": params}))
             while True:
-                msg = self._read_frame()
+                msg = await asyncio.wait_for(ws.recv(), timeout=30)
                 try:
-                    obj = json.loads(msg.decode("utf-8"))
+                    obj = json.loads(msg)
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     continue
                 if obj.get("id") == cmd_id:
@@ -261,31 +269,12 @@ class CdpWebSocket:
                         raise RuntimeError(obj["error"].get("message", str(obj["error"])))
                     return obj.get("result")
 
-    def close(self) -> None:
-        try:
-            self._sock.close()
-        except Exception:
-            pass
-
-
-# ── High-level CDP Operations ────────────────────────────────────────
-
-def cdp_call(
-    host: str, port: int, method: str, params: dict | None = None, page_id: str | None = None
-) -> dict:
-    """Execute a CDP method on the first/selected page."""
-    page = choose_page(host, port, page_id)
-    if not page:
-        raise RuntimeError(f"No CDP-accessible page found on {host}:{port}")
-    ws = CdpWebSocket(page["webSocketDebuggerUrl"])
-    try:
-        result_data = ws.call(method, params or {})
-        return {
-            "page": {"id": page.get("id"), "title": page.get("title"), "url": page.get("url")},
-            "result": result_data,
-        }
-    finally:
-        ws.close()
+    t = threading.Thread(target=_run_in_thread)
+    t.start()
+    t.join()
+    if _error:
+        raise _error
+    return _result
 
 
 def navigate(host: str, port: int, url: str, page_id: str | None = None) -> dict:
