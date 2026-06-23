@@ -49,6 +49,13 @@ class CacheConfig:
  
  
 @dataclass
+class ProviderConfig:
+    name: str = "browser"
+    tavily_api_key: str = ""
+    brave_api_key: str = ""
+
+
+@dataclass
 class ServerConfig:
     """MCP server settings."""
     log_level: str = "INFO"
@@ -62,6 +69,7 @@ class AppConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
+    provider: ProviderConfig = field(default_factory=ProviderConfig)
     engines: dict[str, SearchEngineConfig] = field(default_factory=lambda: {
         name: SearchEngineConfig() for name in ["google", "bing", "baidu", "duckduckgo"]
     })
@@ -96,7 +104,13 @@ class AppConfig:
             cfg.server.log_level = env["BROWSER_SEARCH_LOG_LEVEL"]
         if "BROWSER_SEARCH_BROWSER_PATH" in env:
             cfg.browser.executable_path = env["BROWSER_SEARCH_BROWSER_PATH"]
- 
+        if "BROWSER_SEARCH_PROVIDER" in env:
+            cfg.provider.name = env["BROWSER_SEARCH_PROVIDER"]
+        if "BROWSER_SEARCH_TAVILY_KEY" in env:
+            cfg.provider.tavily_api_key = env["BROWSER_SEARCH_TAVILY_KEY"]
+        if "BROWSER_SEARCH_BRAVE_KEY" in env:
+            cfg.provider.brave_api_key = env["BROWSER_SEARCH_BRAVE_KEY"]
+
         return cfg
  
     def save(self) -> None:
@@ -123,6 +137,11 @@ class AppConfig:
                 "log_level": self.server.log_level,
                 "default_engine": self.server.default_engine,
                 "search_timeout": self.server.search_timeout,
+            },
+            "provider": {
+                "name": self.provider.name,
+                "tavily_api_key": self.provider.tavily_api_key if self.provider.tavily_api_key else "",
+                "brave_api_key": self.provider.brave_api_key if self.provider.brave_api_key else "",
             },
         }
  
@@ -154,4 +173,21 @@ def _merge_config(cfg: AppConfig, data: dict) -> AppConfig:
         cfg.server.default_engine = server["default_engine"]
     if "search_timeout" in server:
         cfg.server.search_timeout = int(server["search_timeout"])
+    if "provider" in data:
+        p = data["provider"]
+        if "name" in p:
+            cfg.provider.name = p["name"]
+        if "tavily_api_key" in p:
+            cfg.provider.tavily_api_key = p["tavily_api_key"]
+        if "brave_api_key" in p:
+            cfg.provider.brave_api_key = p["brave_api_key"]
+
+        if "provider" in data:
+            p = data["provider"]
+            if "name" in p:
+                cfg.provider.name = p["name"]
+            if "tavily_api_key" in p:
+                cfg.provider.tavily_api_key = p["tavily_api_key"]
+            if "brave_api_key" in p:
+                cfg.provider.brave_api_key = p["brave_api_key"]
     return cfg

@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 from . import bridge as bridge_mod
 from . import cdp as cdp_mod
 from .search import EXTRACTORS, SEARCH_ENGINES, PARSERS, SearchSession, SearchResults, _deduplicate_results, get_engine_health
+from .providers import get_provider as _get_api_provider
 import urllib.parse
 
 
@@ -29,6 +30,17 @@ logging.basicConfig(
    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("browser-search-mcp")
+
+
+def _get_provider():
+    cfg = get_config()
+    if cfg.provider.name == "browser":
+        return None
+    try:
+        return _get_api_provider(config=cfg)
+    except Exception as e:
+        log.warning("Provider init failed, falling back to browser: %s", e)
+        return None
 
 
 # ── Result Cache ────────────────────────────────────────────────────
