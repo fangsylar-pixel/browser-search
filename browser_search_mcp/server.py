@@ -120,7 +120,13 @@ def web_search(
        JSON array of {title, url, snippet} objects
    """
    session = get_session()
-    
+   
+   # Check cache first
+   if _SEARCH_CACHE:
+       cached = _SEARCH_CACHE.get(query, engine)
+       if cached is not None:
+           return cached
+   
    # Ensure browser is ready
    try:
        info = session.detect()
@@ -166,7 +172,9 @@ def web_search(
            if parser:
                results = parser(text)
         
-       return json.dumps(results[:max_results], ensure_ascii=False, indent=2)
+       result_str = json.dumps(results[:max_results], ensure_ascii=False, indent=2)
+       _SEARCH_CACHE.set(query, engine, result_str)
+       return result_str
     
    except Exception as exc:
        return json.dumps({"error": f"Search failed: {exc}"})
