@@ -26,6 +26,87 @@ _CAPTCHA_KW = [
 ]
 _last_ts = {}
 
+# Engine health cache
+_engine_health = {}
+_ENGINE_HEALTH_TTL = 300
+
+
+def _check_engine_health(session, engine):
+    now = _time_ab.time()
+    if engine in _engine_health:
+        h, ts = _engine_health[engine]
+        if now - ts < _ENGINE_HEALTH_TTL:
+            return h
+    if not session or not session.available:
+        return True
+    try:
+        cfg = SEARCH_ENGINES.get(engine)
+        if not cfg:
+            return False
+        session.navigate(cfg["url"].format(query="healthcheck"))
+        _time_ab.sleep(2.0)
+        txt = session.get_page_text()
+        if _has_captcha(txt):
+            _engine_health[engine] = (False, now)
+            return False
+        _engine_health[engine] = (True, now)
+        return True
+    except Exception:
+        _engine_health[engine] = (False, _time_ab.time())
+        return False
+
+
+def _normalize_url(url):
+    if not url:
+        return ""
+    u = url.strip()
+    u = u.split("?")[0] if "?" in u else u
+    u = u.rstrip("/")
+    return u.lower()
+
+
+def _title_similarity(t1, t2):
+    if not t1 or not t2:
+        return 0.0
+    a, b = t1.lower().strip(), t2.lower().strip()
+    if a == b:
+        return 1.0
+    wa, wb = set(a.split()), set(b.split())
+    if not wa or not wb:
+        return 0.0
+    return len(wa & wb) / max(len(wa), len(wb))
+
+
+def _deduplicate_results(results):
+    seen_urls = set()
+    seen_titles = []
+    deduped = []
+    for r in results:
+        url = _normalize_url(r.get("url", ""))
+        title = r.get("title", "")
+        if url and url in seen_urls:
+            continue
+        if any(_title_similarity(title, st) > 0.7 for st in seen_titles):
+            continue
+        if url:
+            seen_urls.add(url)
+        seen_titles.append(title)
+        deduped.append(r)
+    return deduped
+
+
+def get_engine_health():
+    now = _time_ab.time()
+    result = {}
+    for engine in SEARCH_ENGINES:
+        if engine in _engine_health:
+            h, ts = _engine_health[engine]
+            result[engine] = {"healthy": h, "age": round(now - ts, 1)}
+        else:
+            result[engine] = {"healthy": True, "age": -1}
+    return result
+
+
 def _has_captcha(t):
     if not t: return False
     t = t.lower()

@@ -18,7 +18,7 @@ from fastmcp import FastMCP
 
 from . import bridge as bridge_mod
 from . import cdp as cdp_mod
-from .search import EXTRACTORS, SEARCH_ENGINES, PARSERS, SearchSession, SearchResults
+from .search import EXTRACTORS, SEARCH_ENGINES, PARSERS, SearchSession, SearchResults, _deduplicate_results, get_engine_health
 import urllib.parse
 
 
@@ -206,7 +206,7 @@ def web_search_multi(
     
    for engine in engine_list:
        combined[engine] = json.loads(
-           web_search(query, engine, max_results_per_engine, headless)
+           web_search(query, engine, max_results_per_engine, headless, deep_mode)
        )
     
    return json.dumps(combined, ensure_ascii=False, indent=2)
