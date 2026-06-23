@@ -1,24 +1,36 @@
 [project]
 name = "browser-search-mcp"
-version = "0.1.0"
-description = "MCP server for web search via real browser - enables any LLM (Ollama, Claude, etc.) to search the web"
+version = "0.2.0"
+description = "MCP server for web search via real browser - enables any LLM (Ollama, Claude, Codex) to search the web"
 authors = [
     {name = "fangsylar-pixel"},
 ]
-license = {text = "MIT"}
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["mcp", "mcp-server", "web-search", "ollama", "codex", "browser-automation", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "fastmcp>=1.0",
-    "playwright>=1.40",
-    "httpx>=0.27",
-    "beautifulsoup4>=4.12",
-    "lxml>=5.0",
+    "websockets>=12.0",
 ]
 
+[project.optional-dependencies]
+api = ["fastapi>=0.100", "uvicorn>=0.20"]
+
 [project.urls]
-homepage = "https://github.com/fangsylar-pixel/browser-search-mcp"
-repository = "https://github.com/fangsylar-pixel/browser-search-mcp"
+homepage = "https://github.com/fangsylar-pixel/browser-search"
+repository = "https://github.com/fangsylar-pixel/browser-search"
+documentation = "https://fangsylar-pixel.github.io/browser-search/"
 
 [build-system]
 requires = ["setuptools>=68.0"]
