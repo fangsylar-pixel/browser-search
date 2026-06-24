@@ -1,88 +1,154 @@
-﻿import subprocess, json, sys, time
-from pathlib import Path
+﻿"""Bridge-based search provider for browser-search-mcp.
 
-PLUGIN_DIR = str(Path.home() / '.codex' / 'plugins' / 'cache' / 'personal' / 'browser-takeover' / '0.6.0+codex.20260618181149')
-SCRIPT = PLUGIN_DIR + '/scripts/browser_takeover_mcp.py'
+Directly imports the browser-takeover-bridge MCP module and uses its
+HTTP API to perform searches through the users existing browser.
+When the extension is not registered, falls back gracefully.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+log = logging.getLogger("browser-search-mcp")
+
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = 17321
+BRIDGE_BASE = "http://" + BRIDGE_HOST + ":" + str(BRIDGE_PORT)
 
 
-def bridge_check():
+def bridge_check() -> bool:
+    """Quick check: is the bridge HTTP server running?"""
     try:
-        import urllib.request as _ur
-        r = _ur.urlopen('http://127.0.0.1:17321/bridge/status', timeout=2)
-        d = json.loads(r.read())
-        clients = d.get('clients', [])
-        return bool(clients)
-    except:
+        req = urllib.request.Request(BRIDGE_BASE + "/bridge/status", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            clients = data.get("clients", [])
+            return len(clients) > 0
+    except Exception:
         return False
-class BridgeMCPClient:
-    def __init__(self):
-        self._proc = None
-    def connect(self, timeout=5):
-        self._proc = subprocess.Popen([sys.executable, SCRIPT], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=PLUGIN_DIR, text=True, bufsize=1)
-        self._send({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"browser-search","version":"0.2.0"}}})
-        resp = self._recv(timeout)
-        return bool(resp)
-    def _send(self, msg):
-        self._proc.stdin.write(json.dumps(msg) + chr(10))
-        self._proc.stdin.flush()
-    def _recv(self, timeout=5):
-        start = time.time()
-        while time.time() - start < timeout:
-            line = self._proc.stdout.readline()
-            if not line: time.sleep(0.05); continue
-            line = line.strip()
-            if not line: continue
-            if line.startswith("Content-Length:"):
-                n = int(line.split(":")[1])
-                self._proc.stdout.readline()
-                try: return json.loads(self._proc.stdout.read(n))
-                except: continue
-            try: return json.loads(line)
-            except: continue
-        return None
-    def call(self, name, args=None, timeout=10):
-        self._send({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":name,"arguments":args or {}}})
-        resp = self._recv(timeout)
-        if resp and "result" in resp:
-            c = resp["result"].get("content",[])
-            if c:
-                try: return json.loads(c[0].get("text","{}"))
-                except: return c[0].get("text","")
-        return None
-    def close(self):
-        if self._proc:
-            self._proc.terminate()
-            self._proc = None
-def create_bridge_provider():
-    if not bridge_check(): return None
-    c = BridgeMCPClient()
-    try:
-        c.connect()
-        return c
-    except:
-        return None
-class BridgeSearchProvider:
-    def __init__(self, client):
-        self._client = client
-    def search(self, query, engine='bing', max_results=10, **kw):
-        import urllib.parse, time, json as _j
-        tabs = self._client.call('browser_takeover_extension_list_tabs', {}, 10)
-        all_tabs = (tabs or {}).get('tabs', [])
-        if not all_tabs: raise RuntimeError('No tabs')
-        t = all_tabs[0]
-        cid, tid = t.get('clientId',''), t.get('tabId','')
-        from .search import SEARCH_ENGINES, EXTRACTORS
-        cfg = SEARCH_ENGINES.get(engine, {})
-        url = cfg.get('url','').format(query=urllib.parse.quote_plus(query))
-        self._client.call('browser_takeover_extension_navigate', {'clientId':cid, 'tabId':tid, 'url':url}, 15)
-        time.sleep(2)
-        ext = EXTRACTORS.get(engine, '')
-        if not ext: return []
-        r = self._client.call('browser_takeover_extension_evaluate', {'clientId':cid, 'tabId':tid, 'expression':ext, 'awaitPromise':True}, 10)
-        raw = ((r or {}).get('result',{}) or {}).get('value','[]') if r else '[]'
-        return _j.loads(raw)[:max_results]
 
-def create_bridge_search_provider():
-    c = create_bridge_provider()
-    if c: return BridgeSearchProvider(c)
-    return None
+
+def create_bridge_search_provider() -> object | None:
+    """Create a BridgeSearchProvider if the bridge extension is active.
+
+    Requires the browser-takeover-bridge HTTP server on port 17321
+    with at least one connected extension client.
+    """
+    if not bridge_check():
+        return None
+    return BridgeSearchProvider()
+
+
+class BridgeSearchProvider:
+    """Search provider that routes through the bridge extension."""
+
+    def search(
+        self, query: str, engine: str = "bing",
+        max_results: int = 10, **kwargs
+    ) -> list[dict]:
+        """Perform a search using the bridge extension."""
+        try:
+            # Get tabs via bridge HTTP API
+            req = urllib.request.Request(
+                BRIDGE_BASE + "/bridge/tabs", method="GET"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                tabs_data = json.loads(resp.read().decode("utf-8"))
+
+            tabs = tabs_data.get("tabs", [])
+            if not tabs:
+                raise RuntimeError("No tabs through bridge")
+
+            tab = tabs[0]
+            client_id = tab.get("clientId", "")
+            tab_id = tab.get("tabId")
+
+            if not client_id or tab_id is None:
+                raise RuntimeError("Invalid tab info from bridge")
+
+            # Search
+            from .search import SEARCH_ENGINES, EXTRACTORS, PARSERS
+
+            cfg = SEARCH_ENGINES.get(engine, {})
+            search_url = cfg.get("url", "").format(
+                query=urllib.parse.quote_plus(query)
+            )
+            if not search_url:
+                raise RuntimeError("Unsupported engine: " + str(engine))
+
+            # Navigate via bridge
+            nav_body = json.dumps({
+                "clientId": client_id,
+                "tabId": tab_id,
+                "url": search_url,
+                "timeout": 15,
+            }).encode("utf-8")
+            nav_req = urllib.request.Request(
+                BRIDGE_BASE + "/bridge/navigate",
+                data=nav_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(nav_req, timeout=20) as resp:
+                nav_result = json.loads(resp.read().decode("utf-8"))
+            if not nav_result or not nav_result.get("ok", False):
+                raise RuntimeError("Navigation failed")
+
+            time.sleep(1.5)
+
+            # Evaluate via bridge
+            extractor = EXTRACTORS.get(engine, "")
+            if not extractor:
+                raise RuntimeError("No extractor for " + str(engine))
+
+            eval_body = json.dumps({
+                "clientId": client_id,
+                "tabId": tab_id,
+                "expression": extractor,
+                "timeout": 10,
+            }).encode("utf-8")
+            eval_req = urllib.request.Request(
+                BRIDGE_BASE + "/bridge/evaluate",
+                data=eval_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(eval_req, timeout=15) as resp:
+                eval_result = json.loads(resp.read().decode("utf-8"))
+
+            if eval_result and eval_result.get("ok", False):
+                raw = eval_result.get("result", {}).get("value", "[]")
+                if raw and raw != "[]":
+                    return json.loads(raw)[:max_results]
+
+            # Fallback: page text
+            text_body = json.dumps({
+                "clientId": client_id,
+                "tabId": tab_id,
+                "expression": "document.body.innerText",
+                "timeout": 10,
+            }).encode("utf-8")
+            text_req = urllib.request.Request(
+                BRIDGE_BASE + "/bridge/evaluate",
+                data=text_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(text_req, timeout=15) as resp:
+                text_result = json.loads(resp.read().decode("utf-8"))
+
+            if text_result and text_result.get("ok", False):
+                page_text = text_result.get("result", {}).get("value", "")
+                parser = PARSERS.get(engine)
+                if parser:
+                    return parser(page_text)[:max_results]
+
+            return []
+
+        except Exception as e:
+            raise RuntimeError("Bridge search failed: " + str(e))
