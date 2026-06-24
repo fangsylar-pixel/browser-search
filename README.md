@@ -3,6 +3,11 @@
 > 基于真实浏览器的 MCP 搜索引擎服务器 - 让任何支持 MCP 的大模型都能搜索网页内容。
 > Browser Search MCP - Web search via real browser for any LLM.
 
+[![GitHub Repo stars](https://img.shields.io/github/stars/fangsylar-pixel/browser-search?style=for-the-badge)](https://github.com/fangsylar-pixel/browser-search)
+[![License](https://img.shields.io/github/license/fangsylar-pixel/browser-search?style=for-the-badge)](https://github.com/fangsylar-pixel/browser-search/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-blue?style=for-the-badge&logo=python)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/browser-search-mcp?style=for-the-badge&logo=pypi)](https://pypi.org/project/browser-search-mcp/)
+
 Built on the same CDP extension bridge architecture as **[browser-takeover-bridge](https://github.com/fangsylar-pixel/browser-takeover-bridge)**.
 
 ## Why?
@@ -59,6 +64,40 @@ The bridge check runs automatically at startup. If the extension is not detected
   }
 }
 `
+
+
+## Quick Demo
+
+Search the web in seconds from any MCP-compatible LLM:
+
+```bash
+pip install browser-search-mcp
+browser-search-mcp
+```
+
+**Live search result** (Bing, ~5s):
+
+```json
+[
+  {
+    "title": "What is the Model Context Protocol (MCP)?",
+    "url": "https://modelcontextprotocol.io/",
+    "snippet": "MCP is an open standard for connecting AI applications to external systems."
+  },
+  {
+    "title": "MCP Server Guide",
+    "url": "https://example.com/mcp-guide",
+    "snippet": "Complete guide to setting up MCP servers for web search."
+  },
+  {
+    "title": "Browser Search MCP",
+    "url": "https://github.com/fangsylar-pixel/browser-search",
+    "snippet": "Open source MCP server using real browser for web search."
+  }
+]
+```
+
+> **No API keys required. No blocking. Just a real browser doing real searches.**
 ## Features
 
 | Feature | Status | Description |
@@ -185,15 +224,34 @@ MIT
 ## Architecture
 
 ```mermaid
-flowchart LR
-    LLM[LLM / Agent]
-    MCP[MCP Client]
-    BSM[browser-search-mcp]
-    CDP[Chrome/Edge CDP]
-    SE[Search Engine]
-    BSM --> CDP --> SE
-    SE --> BSM --> MCP --> LLM
+flowchart TB
+    subgraph User[User Environment]
+        LLM[LLM / Agent]
+        MCP[MCP Client]
+    end
+    subgraph Browser[Browser Layer]
+        BRIDGE[Bridge Extension]
+        CDP[Chrome/Edge CDP]
+    end
+    subgraph Search[Search Layer]
+        BSM[browser-search-mcp]
+        API_PROV[API Providers]
+    end
+    subgraph Engines[Search Engines]
+        G[Google]
+        B[Bing]
+        BA[Baidu]
+        D[DuckDuckGo]
+    end
+
+    LLM --> MCP --> BSM
+    BSM -->|Priority 1| BRIDGE --> CDP --> Engines
+    BSM -->|Priority 2| API_PROV --> Engines
+    BSM -->|Priority 3| CDP --> Engines
+
     style BSM fill:#10b981,color:#fff
+    style BRIDGE fill:#6366f1,color:#fff
+    style API_PROV fill:#f59e0b,color:#fff
 ```
 ## Support
 
