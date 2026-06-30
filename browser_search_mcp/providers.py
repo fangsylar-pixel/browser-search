@@ -37,7 +37,12 @@ class BraveProvider:
         self.api_key = api_key
 
     def search(self, query, max_results=10, **kwargs):
-        import httpx
+        try:
+            import httpx
+        except ImportError:
+            raise RuntimeError(
+                "httpx not installed. Run: pip install browser-search-mcp[brave]"
+            )
         resp = httpx.get(
             "https://api.search.brave.com/res/v1/web/search",
             headers={"X-Subscription-Token": self.api_key},

@@ -46,13 +46,15 @@ async def search(req: SearchRequest):
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatRequest):
-    from .server import web_search, web_search_multi, web_search_read_page, web_search_status
+    from .server import web_research, web_search, web_search_multi, web_search_plan, web_search_read_page, web_search_status
     
     tool_map = {
         "web_search": web_search,
         "web_search_multi": web_search_multi,
         "web_search_read_page": web_search_read_page,
         "web_search_status": web_search_status,
+        "web_search_plan": web_search_plan,
+        "web_research": web_research,
     }
     
     last_message = req.messages[-1]["content"] if req.messages else ""
@@ -78,6 +80,25 @@ async def chat_completions(req: ChatRequest):
                     )
                 elif name == "web_search_status":
                     result = tool_map[name]()
+                elif name == "web_search_plan":
+                    result = tool_map[name](
+                        query=args.get("query", last_message),
+                        max_candidates=args.get("max_candidates", 8),
+                    )
+                elif name == "web_search_read_page":
+                    result = tool_map[name](
+                        url=args.get("url", ""),
+                        max_length=args.get("max_length", 5000),
+                    )
+                elif name == "web_research":
+                    result = tool_map[name](
+                        query=args.get("query", last_message),
+                        engine=args.get("engine", "bing"),
+                        max_results=args.get("max_results", 5),
+                        read_top=args.get("read_top", 3),
+                        auto_expand=args.get("auto_expand", True),
+                        min_relevance=args.get("min_relevance", 0.2),
+                    )
                 else:
                     result = json.dumps({"error": "not implemented"})
                 
@@ -99,6 +120,7 @@ async def chat_completions(req: ChatRequest):
     return {"choices": [{"message": {"role": "assistant", "content": "No tools matched your request."}}]}
 
 
-def run():
-    port = int(sys.argv[2]) if len(sys.argv) > 2 else 9090
+def run(port: int | None = None):
+    if port is None:
+        port = int(sys.argv[2]) if len(sys.argv) > 2 else 9090
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")

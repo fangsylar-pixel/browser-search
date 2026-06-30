@@ -22,6 +22,12 @@ pip install browser-search-mcp
 
 # Start the MCP server
 browser-search-mcp
+
+# Optional CLI helpers
+browser-search-mcp --help
+browser-search-mcp status
+browser-search-mcp doctor
+browser-search-mcp http 9090
 ```
 
 Then configure in any MCP client:
@@ -113,6 +119,7 @@ browser-search-mcp
 | Deep mode | Yes | Auto-extracts top 2 result content |
 | Pagination | Yes | Multi-page search support |
 | Time filters | Yes | hour/day/week/month/year |
+| Intent planning | Yes | Platform/topic/task extraction plus query expansion |
 | Engine health check | Yes | Tracks per-engine availability |
 | Cross-engine dedup | Yes | Deduplicate multi-engine results |
 | API providers (Tavily/Brave) | Yes | Faster, API-key based |
@@ -125,11 +132,25 @@ browser-search-mcp
 
 | Tool | Description |
 |------|-------------|
+| `web_search_plan` | Analyze intent and candidate queries without launching a browser |
 | `web_search` | Search a single engine, returns JSON results |
 | `web_search_multi` | Search multiple engines simultaneously |
-| `web_search_read_page` | Read full content of a search result URL |
+| `web_search_read_page` | Read structured page content for a URL |
+| `web_research` | Search and read top result pages for citation-ready research |
 | `web_search_status` | Check browser, bridge, and cache status |
 | `web_search_discover_browsers` | Find CDP-enabled browsers |
+
+`web_search_plan` is useful before an expensive search: it returns parsed intent,
+required coverage anchors, and expanded candidate queries for broad customer
+requests such as creator topics, product comparisons, tutorials, trends, and
+recommendations.
+
+`web_research` is the best default for agents that need grounded answers. It rewrites
+natural-language questions into search queries, retries across engines, filters
+off-topic results, and labels result quality as `strict` or `partial` based on
+whether the platform/topic/task anchors were covered. It also returns diagnostics,
+cleaned page content for the top results, title, final URL, description, detected
+publish time, and truncation metadata.
 
 ## Configuration
 
@@ -173,6 +194,9 @@ Config file: `~/.browser-search-mcp/config.json`
 | `BROWSER_SEARCH_CACHE_TTL` | `300` | Cache TTL in seconds |
 | `BROWSER_SEARCH_DEFAULT_ENGINE` | `bing` | Default search engine |
 | `BROWSER_SEARCH_BROWSER` | `edge` | Browser executable name |
+| `BROWSER_SEARCH_PORT` | `9333` | CDP remote debugging port |
+| `BROWSER_SEARCH_USER_DATA_DIR` | `/tmp/browser-search-profile` | Browser profile directory |
+| `BROWSER_SEARCH_BROWSER_PATH` | `/path/to/browser` | Explicit browser executable path |
 
 ## How It Works
 

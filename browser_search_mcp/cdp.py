@@ -135,25 +135,41 @@ def launch_browser(
    port: int = 9222,
    user_data_dir: str | None = None,
    headless: bool = False,
+   executable_path: str | None = None,
+   launch_timeout: int = 15,
 ) -> dict:
    """Launch a browser with remote debugging enabled."""
-   exe = find_browser_exe(browser)
+   exe = executable_path or find_browser_exe(browser)
    if not exe:
        return {"launched": False, "error": f"{browser} executable not found"}
    if not user_data_dir:
        user_data_dir = str(Path.home() / f".browser-search-mcp/{browser}-profile")
-   os.makedirs(user_data_dir, exist_ok=True)
+   try:
+       os.makedirs(user_data_dir, exist_ok=True)
+   except OSError as exc:
+       return {
+           "launched": False,
+           "browser": browser,
+           "port": port,
+           "userDataDir": user_data_dir,
+           "error": f"Could not create browser profile directory: {exc}",
+       }
    args = [
        exe,
        f"--remote-debugging-port={port}",
        f"--user-data-dir={user_data_dir}",
        "--no-first-run",
        "--no-default-browser-check",
+       "--remote-allow-origins=*",
    ]
    if headless:
        args.append("--headless=new")
+       args.append("--disable-gpu")
+       args.append("--no-sandbox")
+   args.append("about:blank")
    last_error = None
-   for attempt in range(15):
+   attempts = max(1, int(launch_timeout * 2))
+   for attempt in range(attempts):
        if attempt == 0:
            try:
                subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

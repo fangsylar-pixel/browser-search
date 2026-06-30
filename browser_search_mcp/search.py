@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
 from . import bridge as bridge_mod
@@ -176,7 +177,8 @@ class SearchSession:
    graceful browser lifecycle management.
    """
 
-   def __init__(self):
+   def __init__(self, config: Any | None = None):
+       self._config = config
        self._cdp_host: str | None = None
        self._cdp_port: int | None = None
        self._bridge_available: bool = False
@@ -195,7 +197,13 @@ class SearchSession:
        }
 
        # Check for CDP-accessible browsers
-       browsers = cdp_mod.discover_ports()
+       browser_cfg = getattr(self._config, "browser", None)
+       configured_port = getattr(browser_cfg, "port", 9222)
+       ports = [configured_port]
+       for port in cdp_mod.DEFAULT_PORTS:
+           if port not in ports:
+               ports.append(port)
+       browsers = cdp_mod.discover_ports(ports=ports)
        if browsers:
            info["cdp"]["available"] = True
            info["cdp"]["browsers"] = browsers
@@ -212,31 +220,59 @@ class SearchSession:
                for client in bridge_status.get("clients") or []:
                    browser_name = client.get("browser", "").lower()
                    if "chrome" in browser_name:
-                       browsers = cdp_mod.discover_ports()
+                       browsers = cdp_mod.discover_ports(ports=ports)
                        break
 
        return info
 
    def ensure_browser(self, headless: bool = False) -> dict:
        """Ensure a browser is available, launching one if needed."""
+       browser_cfg = getattr(self._config, "browser", None)
+       configured_port = getattr(browser_cfg, "port", 9222)
+       configured_browser = getattr(browser_cfg, "name", "edge")
+       configured_user_data_dir = getattr(browser_cfg, "user_data_dir", None)
+       configured_executable = getattr(browser_cfg, "executable_path", None)
+       launch_timeout = getattr(browser_cfg, "launch_timeout", 15)
+
        # First check if any CDP port is already available
-       browsers = cdp_mod.discover_ports()
+       ports = [configured_port]
+       for port in cdp_mod.DEFAULT_PORTS:
+           if port not in ports:
+               ports.append(port)
+       browsers = cdp_mod.discover_ports(ports=ports)
        if browsers:
            self._cdp_host = browsers[0]["host"]
            self._cdp_port = browsers[0]["port"]
            return {"source": "existing", "browsers": browsers}
 
        # Try launching one
+       browser_names = [configured_browser]
        for browser_name in ("edge", "chrome", "chromium"):
-           info = cdp_mod.launch_browser(browser_name, headless=headless)
+           if browser_name not in browser_names:
+               browser_names.append(browser_name)
+
+       errors = []
+       for browser_name in browser_names:
+           user_data_dir = configured_user_data_dir
+           if configured_user_data_dir and len(browser_names) > 1 and browser_name != configured_browser:
+               user_data_dir = str(Path(configured_user_data_dir) / browser_name)
+           info = cdp_mod.launch_browser(
+               browser_name,
+               port=configured_port,
+               user_data_dir=user_data_dir,
+               headless=headless,
+               executable_path=configured_executable if browser_name == configured_browser else None,
+               launch_timeout=launch_timeout,
+           )
            if info.get("launched") and info.get("cdpReady", True):
                self._cdp_host = "127.0.0.1"
                self._cdp_port = info["port"]
                self._browser_launched = True
                self._launch_info = info
                return {"source": "launched", "info": info}
+           errors.append({"browser": browser_name, "error": info.get("error", "unknown launch failure")})
 
-       return {"source": "failed", "error": "No browser could be found or launched"}
+       return {"source": "failed", "error": "No browser could be found or launched", "details": errors}
 
    @property
    def available(self) -> bool:

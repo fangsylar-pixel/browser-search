@@ -26,6 +26,14 @@ dependencies = [
 
 [project.optional-dependencies]
 api = ["fastapi>=0.100", "uvicorn>=0.20"]
+brave = ["httpx>=0.24"]
+tavily = ["tavily-python>=0.3"]
+all = [
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "httpx>=0.24",
+    "tavily-python>=0.3",
+]
 
 [project.urls]
 homepage = "https://github.com/fangsylar-pixel/browser-search"

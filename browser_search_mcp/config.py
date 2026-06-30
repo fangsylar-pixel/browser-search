@@ -17,6 +17,14 @@ from typing import Any
  
 CONFIG_DIR = Path.home() / ".browser-search-mcp"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ("1", "true", "yes", "on")
+    return bool(value)
  
  
 # ── Config dataclass ─────────────────────────────────────────────────
@@ -93,7 +101,7 @@ class AppConfig:
         if "BROWSER_SEARCH_BROWSER" in env:
             cfg.browser.name = env["BROWSER_SEARCH_BROWSER"]
         if "BROWSER_SEARCH_HEADLESS" in env:
-            cfg.browser.headless = env["BROWSER_SEARCH_HEADLESS"].lower() in ("1", "true", "yes")
+            cfg.browser.headless = _as_bool(env["BROWSER_SEARCH_HEADLESS"])
         if "BROWSER_SEARCH_PORT" in env:
             cfg.browser.port = int(env["BROWSER_SEARCH_PORT"])
         if "BROWSER_SEARCH_CACHE_TTL" in env:
@@ -104,6 +112,14 @@ class AppConfig:
             cfg.server.log_level = env["BROWSER_SEARCH_LOG_LEVEL"]
         if "BROWSER_SEARCH_BROWSER_PATH" in env:
             cfg.browser.executable_path = env["BROWSER_SEARCH_BROWSER_PATH"]
+        if "BROWSER_SEARCH_USER_DATA_DIR" in env:
+            cfg.browser.user_data_dir = env["BROWSER_SEARCH_USER_DATA_DIR"]
+        if "BROWSER_SEARCH_LAUNCH_TIMEOUT" in env:
+            cfg.browser.launch_timeout = int(env["BROWSER_SEARCH_LAUNCH_TIMEOUT"])
+        if "BROWSER_SEARCH_CACHE_ENABLED" in env:
+            cfg.cache.enabled = _as_bool(env["BROWSER_SEARCH_CACHE_ENABLED"])
+        if "BROWSER_SEARCH_CACHE_MAX_SIZE" in env:
+            cfg.cache.max_size = int(env["BROWSER_SEARCH_CACHE_MAX_SIZE"])
         if "BROWSER_SEARCH_PROVIDER" in env:
             cfg.provider.name = env["BROWSER_SEARCH_PROVIDER"]
         if "BROWSER_SEARCH_TAVILY_KEY" in env:
@@ -154,14 +170,16 @@ def _merge_config(cfg: AppConfig, data: dict) -> AppConfig:
     if "port" in browser:
         cfg.browser.port = int(browser["port"])
     if "headless" in browser:
-        cfg.browser.headless = bool(browser["headless"])
+        cfg.browser.headless = _as_bool(browser["headless"])
+    if "user_data_dir" in browser:
+        cfg.browser.user_data_dir = browser.get("user_data_dir")
     if "executable_path" in browser:
         cfg.browser.executable_path = browser.get("executable_path")
     if "launch_timeout" in browser:
         cfg.browser.launch_timeout = int(browser["launch_timeout"])
     cache = data.get("cache", {})
     if "enabled" in cache:
-        cfg.cache.enabled = bool(cache["enabled"])
+        cfg.cache.enabled = _as_bool(cache["enabled"])
     if "ttl" in cache:
         cfg.cache.ttl = int(cache["ttl"])
     if "max_size" in cache:
@@ -181,13 +199,4 @@ def _merge_config(cfg: AppConfig, data: dict) -> AppConfig:
             cfg.provider.tavily_api_key = p["tavily_api_key"]
         if "brave_api_key" in p:
             cfg.provider.brave_api_key = p["brave_api_key"]
-
-        if "provider" in data:
-            p = data["provider"]
-            if "name" in p:
-                cfg.provider.name = p["name"]
-            if "tavily_api_key" in p:
-                cfg.provider.tavily_api_key = p["tavily_api_key"]
-            if "brave_api_key" in p:
-                cfg.provider.brave_api_key = p["brave_api_key"]
     return cfg
