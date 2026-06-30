@@ -1,5 +1,14 @@
 # Browser Search MCP
 
+**Real browser search for AI agents.** Browser Search MCP lets Claude Desktop,
+Cursor, Codex, Ollama, and other MCP clients search the web through Chrome/Edge,
+read result pages, expand vague user questions, and report whether the results
+actually match the user's intent.
+
+```text
+Search like a real browser. Read like a research agent.
+```
+
 > 基于真实浏览器的 MCP 搜索引擎服务器 - 让任何支持 MCP 的大模型都能搜索网页内容。
 > Browser Search MCP - Web search via real browser for any LLM.
 
@@ -9,6 +18,67 @@
 [![PyPI](https://img.shields.io/pypi/v/browser-search-mcp?style=for-the-badge&logo=pypi)](https://pypi.org/project/browser-search-mcp/)
 
 Built on the same CDP extension bridge architecture as **[browser-takeover-bridge](https://github.com/fangsylar-pixel/browser-takeover-bridge)**.
+
+## Launch Week
+
+If you are discovering this project from a post, start here:
+
+- **Install in 30 seconds:** `pip install browser-search-mcp`
+- **Best default tool:** `web_research`
+- **Preview query expansion:** `web_search_plan`
+- **Use cases:** local agents, private research assistants, authenticated browser search, citation-ready page reading
+- **Launch assets:** [Launch Week Plan](docs/LAUNCH_WEEK.md) and [Ready-to-post copy](docs/LAUNCH_POSTS.md)
+
+### Why agents use it
+
+| Need | Browser Search MCP |
+|------|--------------------|
+| No search API key | Uses your browser by default |
+| Real web pages | Reads and cleans top result pages |
+| Vague user questions | Expands natural-language intent into search queries |
+| Quality control | Marks results as `strict` or `partial` and reports missing anchors |
+| Private/local workflows | Runs as an MCP server on your machine |
+| Logged-in browser context | Can integrate with browser-takeover bridge |
+
+### Example: plan before searching
+
+```json
+{
+  "query": "home projector vs TV which is better",
+  "intent": {
+    "topic": ["projector", "TV"],
+    "task": ["compare", "buying guide", "recommendation"]
+  },
+  "candidate_queries": [
+    "home projector vs TV which is better",
+    "projector TV comparison pros cons buying guide",
+    "projector TV comparison recommendation"
+  ]
+}
+```
+
+### Example: research-ready result
+
+```json
+{
+  "ok": true,
+  "query": "2026 exam English study plan",
+  "quality": "strict",
+  "diagnostics": {
+    "missing_anchor_groups": []
+  },
+  "results": [
+    {
+      "title": "Example result",
+      "url": "https://example.com",
+      "page": {
+        "ok": true,
+        "content": "Cleaned page text for the agent..."
+      }
+    }
+  ]
+}
+```
 
 ## Why?
 

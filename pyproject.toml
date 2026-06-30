@@ -8,7 +8,7 @@ authors = [
 license = "MIT"
 readme = "README.md"
 requires-python = ">=3.11"
-keywords = ["mcp", "mcp-server", "web-search", "ollama", "codex", "browser-automation", "llm"]
+keywords = ["mcp", "mcp-server", "model-context-protocol", "web-search", "ai-agent", "local-llm", "ollama", "codex", "browser-automation", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
